@@ -5,10 +5,8 @@ package com.xiaohansong.minidb;
  */
 public interface MiniDb {
 
-    void put(byte[] key, byte[] value);
+    void put(String key, String value);
 
-    byte[] get(byte[] key);
-
-    void delete(byte[] key);
+    String get(String key);
 
 }

@@ -1,10 +1,10 @@
 package com.xiaohansong.minidb.purelog;
 
+import com.alibaba.fastjson.JSONObject;
 import com.xiaohansong.minidb.MiniDb;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
+import java.io.*;
+import java.util.LinkedList;
 
 /**
  * 简单的基于日志的数据库
@@ -13,23 +13,20 @@ public class PureLogDb implements MiniDb {
 
     private File logFile;
 
-    private byte[] fieldSeparator = ":".getBytes(StandardCharsets.UTF_8);
-
-    private byte[] kvSeparator = "\n".getBytes(StandardCharsets.UTF_8);
-
     public PureLogDb(String logPath) {
         logFile = new File(logPath);
     }
 
     @Override
-    public void put(byte[] key, byte[] value) {
+    public void put(String key, String value) {
         try {
-            FileOutputStream outputStream = new FileOutputStream(logFile);
-            outputStream.write(key);
-            outputStream.write(fieldSeparator);
-            outputStream.write(value);
-            outputStream.write(kvSeparator);
-            outputStream.close();
+            FileWriter fileWriter = new FileWriter(logFile, true);
+            BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+            JSONObject kv = new JSONObject();
+            kv.put(key, value);
+            bufferedWriter.write(kv.toJSONString());
+            bufferedWriter.newLine();
+            bufferedWriter.close();
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -37,17 +34,27 @@ public class PureLogDb implements MiniDb {
     }
 
     @Override
-    public byte[] get(byte[] key) {
+    public String get(String key) {
         try {
+            FileReader fileReader = new FileReader(logFile);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            String line = bufferedReader.readLine();
+            LinkedList<String> values = new LinkedList<>();
 
+            while (line != null) {
+                JSONObject kv = JSONObject.parseObject(line);
+                if (kv.getString(key) != null) {
+                    values.add(kv.getString(key));
+                }
+                line = bufferedReader.readLine();
+            }
+            if (values.size() != 0) {
+                return values.getLast();
+            }
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
-        return new byte[0];
+        return null;
     }
 
-    @Override
-    public void delete(byte[] key) {
-
-    }
 }
