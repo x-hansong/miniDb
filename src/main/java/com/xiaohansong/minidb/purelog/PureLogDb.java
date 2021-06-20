@@ -8,7 +8,8 @@ import com.xiaohansong.minidb.model.command.RmCommand;
 import com.xiaohansong.minidb.model.command.SetCommand;
 
 import java.io.*;
-import java.util.LinkedList;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 简单的基于日志的数据库
@@ -18,9 +19,39 @@ public class PureLogDb implements MiniDb {
     public static final String TYPE = "type";
     public static final String KEY = "key";
     private File logFile;
+    private Map<String, Command> index;
 
     public PureLogDb(String logPath) {
         logFile = new File(logPath);
+        index = new HashMap<>();
+        loadIndex();
+    }
+
+    /**
+     * 从日志文件加载数据到索引中
+     */
+    private void loadIndex() {
+        try {
+            if (!logFile.exists()) {
+                return;
+            }
+            FileReader fileReader = new FileReader(logFile);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            String line = bufferedReader.readLine();
+            while (line != null) {
+                JSONObject command = JSONObject.parseObject(line);
+                if (CommandTypeEnum.SET.name().equals(command.getString(TYPE))) {
+                    SetCommand setCommand = command.toJavaObject(SetCommand.class);
+                    index.put(setCommand.getKey(), setCommand);
+                } else if (CommandTypeEnum.RM.name().equals(command.getString(TYPE))) {
+                    RmCommand rmCommand = command.toJavaObject(RmCommand.class);
+                    index.put(rmCommand.getKey(), rmCommand);
+                }
+                line = bufferedReader.readLine();
+            }
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
     }
 
     @Override
@@ -32,6 +63,7 @@ public class PureLogDb implements MiniDb {
             bufferedWriter.write(setCommand.toString());
             bufferedWriter.newLine();
             bufferedWriter.close();
+            index.put(setCommand.getKey(), setCommand);
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -40,32 +72,16 @@ public class PureLogDb implements MiniDb {
     @Override
     public String get(String key) {
         try {
-            FileReader fileReader = new FileReader(logFile);
-            BufferedReader bufferedReader = new BufferedReader(fileReader);
-            String line = bufferedReader.readLine();
-            LinkedList<Command> commands = new LinkedList<>();
-            while (line != null) {
-                JSONObject command = JSONObject.parseObject(line);
-                if (key.equals(command.getString(KEY))) {
-                    if (CommandTypeEnum.SET.name().equals(command.getString(TYPE))) {
-                        commands.add(command.toJavaObject(SetCommand.class));
-                    } else if (CommandTypeEnum.RM.name().equals(command.getString(TYPE))) {
-                        commands.add(command.toJavaObject(RmCommand.class));
-                    }
-                }
-                line = bufferedReader.readLine();
+            Command command = index.get(key);
+            if (command instanceof SetCommand) {
+                return ((SetCommand) command).getValue();
+            } else if (command instanceof RmCommand) {
+                return null;
             }
-            if (commands.size() != 0) {
-                if (commands.getLast() instanceof SetCommand) {
-                    return ((SetCommand) commands.getLast()).getValue();
-                } else if (commands.getLast() instanceof RmCommand) {
-                    return null;
-                }
-            }
+            return null;
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
-        return null;
     }
 
     @Override
@@ -77,6 +93,7 @@ public class PureLogDb implements MiniDb {
             bufferedWriter.write(rmCommand.toString());
             bufferedWriter.newLine();
             bufferedWriter.close();
+            index.put(rmCommand.getKey(), rmCommand);
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
