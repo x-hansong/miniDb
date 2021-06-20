@@ -30,7 +30,6 @@ public class PureLogDb implements MiniDb {
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
-
     }
 
     @Override
@@ -40,7 +39,6 @@ public class PureLogDb implements MiniDb {
             BufferedReader bufferedReader = new BufferedReader(fileReader);
             String line = bufferedReader.readLine();
             LinkedList<String> values = new LinkedList<>();
-
             while (line != null) {
                 JSONObject kv = JSONObject.parseObject(line);
                 if (kv.getString(key) != null) {
