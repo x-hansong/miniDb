@@ -25,5 +25,11 @@ public class PureLogDbTest {
         for (int i = 10; i < 20; i++) {
             assertNull(pureLogDb.get("key" + i));
         }
+        for (int i = 0; i < 10; i++) {
+            pureLogDb.remove("key" + i);
+        }
+        for (int i = 0; i < 10; i++) {
+            assertNull(pureLogDb.get("key" + i));
+        }
     }
 }

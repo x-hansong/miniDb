@@ -2,6 +2,10 @@ package com.xiaohansong.minidb.purelog;
 
 import com.alibaba.fastjson.JSONObject;
 import com.xiaohansong.minidb.MiniDb;
+import com.xiaohansong.minidb.model.command.Command;
+import com.xiaohansong.minidb.model.command.CommandTypeEnum;
+import com.xiaohansong.minidb.model.command.RmCommand;
+import com.xiaohansong.minidb.model.command.SetCommand;
 
 import java.io.*;
 import java.util.LinkedList;
@@ -11,6 +15,8 @@ import java.util.LinkedList;
  */
 public class PureLogDb implements MiniDb {
 
+    public static final String TYPE = "type";
+    public static final String KEY = "key";
     private File logFile;
 
     public PureLogDb(String logPath) {
@@ -22,9 +28,8 @@ public class PureLogDb implements MiniDb {
         try {
             FileWriter fileWriter = new FileWriter(logFile, true);
             BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
-            JSONObject kv = new JSONObject();
-            kv.put(key, value);
-            bufferedWriter.write(kv.toJSONString());
+            SetCommand setCommand = new SetCommand(key, value);
+            bufferedWriter.write(setCommand.toString());
             bufferedWriter.newLine();
             bufferedWriter.close();
         } catch (Throwable t) {
@@ -38,21 +43,43 @@ public class PureLogDb implements MiniDb {
             FileReader fileReader = new FileReader(logFile);
             BufferedReader bufferedReader = new BufferedReader(fileReader);
             String line = bufferedReader.readLine();
-            LinkedList<String> values = new LinkedList<>();
+            LinkedList<Command> commands = new LinkedList<>();
             while (line != null) {
-                JSONObject kv = JSONObject.parseObject(line);
-                if (kv.getString(key) != null) {
-                    values.add(kv.getString(key));
+                JSONObject command = JSONObject.parseObject(line);
+                if (key.equals(command.getString(KEY))) {
+                    if (CommandTypeEnum.SET.name().equals(command.getString(TYPE))) {
+                        commands.add(command.toJavaObject(SetCommand.class));
+                    } else if (CommandTypeEnum.RM.name().equals(command.getString(TYPE))) {
+                        commands.add(command.toJavaObject(RmCommand.class));
+                    }
                 }
                 line = bufferedReader.readLine();
             }
-            if (values.size() != 0) {
-                return values.getLast();
+            if (commands.size() != 0) {
+                if (commands.getLast() instanceof SetCommand) {
+                    return ((SetCommand) commands.getLast()).getValue();
+                } else if (commands.getLast() instanceof RmCommand) {
+                    return null;
+                }
             }
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
         return null;
+    }
+
+    @Override
+    public void remove(String key) {
+        try {
+            FileWriter fileWriter = new FileWriter(logFile, true);
+            BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+            RmCommand rmCommand = new RmCommand(key);
+            bufferedWriter.write(rmCommand.toString());
+            bufferedWriter.newLine();
+            bufferedWriter.close();
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
     }
 
 }

@@ -9,4 +9,6 @@ public interface MiniDb {
 
     String get(String key);
 
+    void remove(String key);
+
 }
