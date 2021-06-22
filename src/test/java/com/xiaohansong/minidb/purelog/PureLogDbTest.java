@@ -3,7 +3,7 @@ package com.xiaohansong.minidb.purelog;
 import org.junit.Assert;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertNull;
 
 public class PureLogDbTest {
 

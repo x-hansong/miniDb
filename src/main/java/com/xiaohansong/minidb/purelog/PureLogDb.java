@@ -1,13 +1,16 @@
 package com.xiaohansong.minidb.purelog;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.xiaohansong.minidb.MiniDb;
-import com.xiaohansong.minidb.model.command.Command;
+import com.xiaohansong.minidb.model.CommandPos;
 import com.xiaohansong.minidb.model.command.CommandTypeEnum;
 import com.xiaohansong.minidb.model.command.RmCommand;
 import com.xiaohansong.minidb.model.command.SetCommand;
 
-import java.io.*;
+import java.io.File;
+import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -18,13 +21,24 @@ public class PureLogDb implements MiniDb {
 
     public static final String TYPE = "type";
     public static final String KEY = "key";
+    public static final String RW_MODE = "rw";
+    public static final char COMMAND_SEPARATOR = '\n';
+    public static final String LINE_BREAK = "\n";
     private File logFile;
-    private Map<String, Command> index;
+    private RandomAccessFile wal;
+    private long currentOffset;
+    private Map<String, CommandPos> index;
 
     public PureLogDb(String logPath) {
-        logFile = new File(logPath);
-        index = new HashMap<>();
-        loadIndex();
+        try {
+            logFile = new File(logPath);
+            wal = new RandomAccessFile(logFile, RW_MODE);
+            currentOffset = wal.length();
+            index = new HashMap<>();
+            loadIndex();
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
     }
 
     /**
@@ -32,22 +46,15 @@ public class PureLogDb implements MiniDb {
      */
     private void loadIndex() {
         try {
-            if (!logFile.exists()) {
-                return;
-            }
-            FileReader fileReader = new FileReader(logFile);
-            BufferedReader bufferedReader = new BufferedReader(fileReader);
-            String line = bufferedReader.readLine();
-            while (line != null) {
-                JSONObject command = JSONObject.parseObject(line);
-                if (CommandTypeEnum.SET.name().equals(command.getString(TYPE))) {
-                    SetCommand setCommand = command.toJavaObject(SetCommand.class);
-                    index.put(setCommand.getKey(), setCommand);
-                } else if (CommandTypeEnum.RM.name().equals(command.getString(TYPE))) {
-                    RmCommand rmCommand = command.toJavaObject(RmCommand.class);
-                    index.put(rmCommand.getKey(), rmCommand);
-                }
-                line = bufferedReader.readLine();
+            wal.seek(0);
+            while (wal.getFilePointer() < currentOffset) {
+                int currentLength = wal.readInt();
+                long offset = wal.getFilePointer();
+                byte[] buffer = new byte[currentLength];
+                wal.read(buffer);
+                JSONObject commandJson = JSONObject.parseObject(new String(buffer, StandardCharsets.UTF_8));
+                CommandPos commandPos = new CommandPos(offset, currentLength);
+                index.put(commandJson.getString(KEY), commandPos);
             }
         } catch (Throwable t) {
             throw new RuntimeException(t);
@@ -57,13 +64,18 @@ public class PureLogDb implements MiniDb {
     @Override
     public void put(String key, String value) {
         try {
-            FileWriter fileWriter = new FileWriter(logFile, true);
-            BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+            checkParam(key);
+            checkParam(value);
             SetCommand setCommand = new SetCommand(key, value);
-            bufferedWriter.write(setCommand.toString());
-            bufferedWriter.newLine();
-            bufferedWriter.close();
-            index.put(setCommand.getKey(), setCommand);
+            wal.seek(currentOffset);
+            byte[] commandBytes = setCommand.toString().getBytes(StandardCharsets.UTF_8);
+            long length = commandBytes.length;
+            wal.writeInt((int) length);
+            long offset = wal.getFilePointer();
+            wal.write(commandBytes);
+            currentOffset = wal.getFilePointer();
+            CommandPos commandPos = new CommandPos(offset, length);
+            index.put(setCommand.getKey(), commandPos);
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -72,10 +84,18 @@ public class PureLogDb implements MiniDb {
     @Override
     public String get(String key) {
         try {
-            Command command = index.get(key);
-            if (command instanceof SetCommand) {
-                return ((SetCommand) command).getValue();
-            } else if (command instanceof RmCommand) {
+            CommandPos commandPos = index.get(key);
+            if (commandPos == null) {
+                return null;
+            }
+            wal.seek(commandPos.getOffset());
+            byte[] commandBytes = new byte[(int) commandPos.getLength()];
+            wal.read(commandBytes);
+            JSONObject commandJson = JSON.parseObject(new String(commandBytes, StandardCharsets.UTF_8));
+            if (CommandTypeEnum.SET.name().equals(commandJson.getString(TYPE))) {
+                SetCommand setCommand = commandJson.toJavaObject(SetCommand.class);
+                return setCommand.getValue();
+            } else if (CommandTypeEnum.RM.name().equals(commandJson.getString(TYPE))) {
                 return null;
             }
             return null;
@@ -87,15 +107,33 @@ public class PureLogDb implements MiniDb {
     @Override
     public void remove(String key) {
         try {
-            FileWriter fileWriter = new FileWriter(logFile, true);
-            BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+            checkParam(key);
             RmCommand rmCommand = new RmCommand(key);
-            bufferedWriter.write(rmCommand.toString());
-            bufferedWriter.newLine();
-            bufferedWriter.close();
-            index.put(rmCommand.getKey(), rmCommand);
+            wal.seek(currentOffset);
+            byte[] commandBytes = rmCommand.toString().getBytes(StandardCharsets.UTF_8);
+            long length = commandBytes.length;
+            wal.writeInt((int) length);
+            long offset = wal.getFilePointer();
+            wal.write(commandBytes);
+            currentOffset = wal.getFilePointer();
+            CommandPos commandPos = new CommandPos(offset, length);
+            index.put(rmCommand.getKey(), commandPos);
         } catch (Throwable t) {
             throw new RuntimeException(t);
+        }
+    }
+
+    /**
+     * 检查入参
+     * @param input
+     */
+    private void checkParam(String input) {
+        if (input == null) {
+            throw new IllegalArgumentException("参数不能为null");
+        }
+
+        if (input.contains(LINE_BREAK)) {
+            throw new IllegalArgumentException("参数不能包含换行符");
         }
     }
 
