@@ -22,8 +22,6 @@ public class PureLogDb implements MiniDb {
     public static final String TYPE = "type";
     public static final String KEY = "key";
     public static final String RW_MODE = "rw";
-    public static final char COMMAND_SEPARATOR = '\n';
-    public static final String LINE_BREAK = "\n";
     private File logFile;
     private RandomAccessFile wal;
     private long currentOffset;
@@ -64,8 +62,6 @@ public class PureLogDb implements MiniDb {
     @Override
     public void put(String key, String value) {
         try {
-            checkParam(key);
-            checkParam(value);
             SetCommand setCommand = new SetCommand(key, value);
             wal.seek(currentOffset);
             byte[] commandBytes = setCommand.toString().getBytes(StandardCharsets.UTF_8);
@@ -107,7 +103,6 @@ public class PureLogDb implements MiniDb {
     @Override
     public void remove(String key) {
         try {
-            checkParam(key);
             RmCommand rmCommand = new RmCommand(key);
             wal.seek(currentOffset);
             byte[] commandBytes = rmCommand.toString().getBytes(StandardCharsets.UTF_8);
@@ -120,20 +115,6 @@ public class PureLogDb implements MiniDb {
             index.put(rmCommand.getKey(), commandPos);
         } catch (Throwable t) {
             throw new RuntimeException(t);
-        }
-    }
-
-    /**
-     * 检查入参
-     * @param input
-     */
-    private void checkParam(String input) {
-        if (input == null) {
-            throw new IllegalArgumentException("参数不能为null");
-        }
-
-        if (input.contains(LINE_BREAK)) {
-            throw new IllegalArgumentException("参数不能包含换行符");
         }
     }
 
