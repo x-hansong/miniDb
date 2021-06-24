@@ -24,14 +24,12 @@ public class PureLogDb implements MiniDb {
     public static final String RW_MODE = "rw";
     private File logFile;
     private RandomAccessFile wal;
-    private long currentOffset;
     private Map<String, CommandPos> index;
 
     public PureLogDb(String logPath) {
         try {
             logFile = new File(logPath);
             wal = new RandomAccessFile(logFile, RW_MODE);
-            currentOffset = wal.length();
             index = new HashMap<>();
             loadIndex();
         } catch (Throwable t) {
@@ -45,7 +43,7 @@ public class PureLogDb implements MiniDb {
     private void loadIndex() {
         try {
             wal.seek(0);
-            while (wal.getFilePointer() < currentOffset) {
+            while (wal.getFilePointer() < wal.length()) {
                 int currentLength = wal.readInt();
                 long offset = wal.getFilePointer();
                 byte[] buffer = new byte[currentLength];
@@ -63,13 +61,12 @@ public class PureLogDb implements MiniDb {
     public void put(String key, String value) {
         try {
             SetCommand setCommand = new SetCommand(key, value);
-            wal.seek(currentOffset);
+            wal.seek(wal.length());
             byte[] commandBytes = setCommand.toString().getBytes(StandardCharsets.UTF_8);
             long length = commandBytes.length;
             wal.writeInt((int) length);
             long offset = wal.getFilePointer();
             wal.write(commandBytes);
-            currentOffset = wal.getFilePointer();
             CommandPos commandPos = new CommandPos(offset, length);
             index.put(setCommand.getKey(), commandPos);
         } catch (Throwable t) {
@@ -104,13 +101,12 @@ public class PureLogDb implements MiniDb {
     public void remove(String key) {
         try {
             RmCommand rmCommand = new RmCommand(key);
-            wal.seek(currentOffset);
+            wal.seek(wal.length());
             byte[] commandBytes = rmCommand.toString().getBytes(StandardCharsets.UTF_8);
             long length = commandBytes.length;
             wal.writeInt((int) length);
             long offset = wal.getFilePointer();
             wal.write(commandBytes);
-            currentOffset = wal.getFilePointer();
             CommandPos commandPos = new CommandPos(offset, length);
             index.put(rmCommand.getKey(), commandPos);
         } catch (Throwable t) {
