@@ -9,7 +9,7 @@ public class PureLogDbTest {
 
     @Test
     public void test() {
-        PureLogDb pureLogDb = new PureLogDb("db.log");
+        PureLogDb pureLogDb = new PureLogDb("./", 1024);
         for (int i = 0; i < 10; i++) {
             pureLogDb.put("key" + i, "value" + i);
         }

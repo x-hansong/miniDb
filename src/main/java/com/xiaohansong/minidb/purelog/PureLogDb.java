@@ -1,74 +1,65 @@
 package com.xiaohansong.minidb.purelog;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import com.xiaohansong.minidb.MiniDb;
-import com.xiaohansong.minidb.model.CommandPos;
-import com.xiaohansong.minidb.model.command.CommandTypeEnum;
+import com.xiaohansong.minidb.model.Constants;
+import com.xiaohansong.minidb.model.HashIndexTable;
+import com.xiaohansong.minidb.model.command.Command;
 import com.xiaohansong.minidb.model.command.RmCommand;
 import com.xiaohansong.minidb.model.command.SetCommand;
+import com.xiaohansong.minidb.utils.LoggerUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.RandomAccessFile;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Comparator;
+import java.util.TreeMap;
 
 /**
  * 简单的基于日志的数据库
  */
 public class PureLogDb implements MiniDb {
 
-    public static final String TYPE = "type";
-    public static final String KEY = "key";
-    public static final String RW_MODE = "rw";
-    private File logFile;
-    private RandomAccessFile wal;
-    private Map<String, CommandPos> index;
+    private Logger LOGGER = LoggerFactory.getLogger(PureLogDb.class);
 
-    public PureLogDb(String logPath) {
+
+    private final TreeMap<String, HashIndexTable> indexMap;
+    private HashIndexTable currentTable;
+    private final long logSizeThreshold;
+
+    public PureLogDb(String dataDir, long logSizeThreshold) {
         try {
-            logFile = new File(logPath);
-            wal = new RandomAccessFile(logFile, RW_MODE);
-            index = new HashMap<>();
-            loadIndex();
+            File dir = new File(dataDir);
+            File[] files = dir.listFiles();
+            indexMap = new TreeMap<>(Comparator.reverseOrder());
+            currentTable = new HashIndexTable(newLogFileName());
+            this.logSizeThreshold = logSizeThreshold;
+            indexMap.put(currentTable.getLogName(), currentTable);
+            if (files == null || files.length == 0) {
+                return;
+            }
+            for (File file : files) {
+                String fileName = file.getName();
+                if (file.isFile() && fileName.endsWith(Constants.LOG_FILE_SUFFIX)) {
+                    HashIndexTable indexTable = new HashIndexTable(file.getAbsolutePath());
+                    indexMap.put(indexTable.getLogName(), indexTable);
+                }
+            }
+            LoggerUtil.debug(LOGGER, "加载索引文件：{}", indexMap.keySet());
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
     }
 
-    /**
-     * 从日志文件加载数据到索引中
-     */
-    private void loadIndex() {
-        try {
-            wal.seek(0);
-            while (wal.getFilePointer() < wal.length()) {
-                int currentLength = wal.readInt();
-                long offset = wal.getFilePointer();
-                byte[] buffer = new byte[currentLength];
-                wal.read(buffer);
-                JSONObject commandJson = JSONObject.parseObject(new String(buffer, StandardCharsets.UTF_8));
-                CommandPos commandPos = new CommandPos(offset, currentLength);
-                index.put(commandJson.getString(KEY), commandPos);
-            }
-        } catch (Throwable t) {
-            throw new RuntimeException(t);
-        }
+    private String newLogFileName() {
+        return System.currentTimeMillis() + ".log";
     }
 
     @Override
     public void put(String key, String value) {
         try {
             SetCommand setCommand = new SetCommand(key, value);
-            wal.seek(wal.length());
-            byte[] commandBytes = setCommand.toString().getBytes(StandardCharsets.UTF_8);
-            long length = commandBytes.length;
-            wal.writeInt((int) length);
-            long offset = wal.getFilePointer();
-            wal.write(commandBytes);
-            CommandPos commandPos = new CommandPos(offset, length);
-            index.put(setCommand.getKey(), commandPos);
+            currentTable.writeCommand(setCommand);
+            checkIfCreateNewLog();
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -77,19 +68,14 @@ public class PureLogDb implements MiniDb {
     @Override
     public String get(String key) {
         try {
-            CommandPos commandPos = index.get(key);
-            if (commandPos == null) {
-                return null;
-            }
-            wal.seek(commandPos.getOffset());
-            byte[] commandBytes = new byte[(int) commandPos.getLength()];
-            wal.read(commandBytes);
-            JSONObject commandJson = JSON.parseObject(new String(commandBytes, StandardCharsets.UTF_8));
-            if (CommandTypeEnum.SET.name().equals(commandJson.getString(TYPE))) {
-                SetCommand setCommand = commandJson.toJavaObject(SetCommand.class);
-                return setCommand.getValue();
-            } else if (CommandTypeEnum.RM.name().equals(commandJson.getString(TYPE))) {
-                return null;
+            for (HashIndexTable table : indexMap.values()) {
+                Command command = table.queryCommand(key);
+                LoggerUtil.debug(LOGGER, "查询key={}, 当前日志：{}, 结果：{}", key, table.getLogName(), command);
+                if (command instanceof SetCommand) {
+                    return ((SetCommand) command).getValue();
+                } else if (command instanceof RmCommand) {
+                    return null;
+                }
             }
             return null;
         } catch (Throwable t) {
@@ -101,16 +87,20 @@ public class PureLogDb implements MiniDb {
     public void remove(String key) {
         try {
             RmCommand rmCommand = new RmCommand(key);
-            wal.seek(wal.length());
-            byte[] commandBytes = rmCommand.toString().getBytes(StandardCharsets.UTF_8);
-            long length = commandBytes.length;
-            wal.writeInt((int) length);
-            long offset = wal.getFilePointer();
-            wal.write(commandBytes);
-            CommandPos commandPos = new CommandPos(offset, length);
-            index.put(rmCommand.getKey(), commandPos);
+            currentTable.writeCommand(rmCommand);
+            checkIfCreateNewLog();
         } catch (Throwable t) {
             throw new RuntimeException(t);
+        }
+    }
+
+    private void checkIfCreateNewLog() {
+        long size = currentTable.logFileLength();
+        if (size > logSizeThreshold) {
+            currentTable = new HashIndexTable(newLogFileName());
+            indexMap.put(currentTable.getLogName(), currentTable);
+            LoggerUtil.debug(LOGGER, "当前文件长度为：{}, 超过阈值{},触发文件分段，新增日志：{}",
+                    size, logSizeThreshold, currentTable.getLogName());
         }
     }
 
