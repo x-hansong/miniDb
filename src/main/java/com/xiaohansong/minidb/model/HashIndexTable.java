@@ -41,7 +41,6 @@ public class HashIndexTable {
             this.file = new File(filePath);
             this.tableFile = new RandomAccessFile(file, Constants.RW_MODE);
             this.index = new HashMap<>();
-            //加载缓存
             tableFile.seek(0);
             while (tableFile.getFilePointer() < tableFile.length()) {
                 int currentLength = tableFile.readInt();
@@ -92,7 +91,6 @@ public class HashIndexTable {
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
-
     }
 
     public String getLogName() {
