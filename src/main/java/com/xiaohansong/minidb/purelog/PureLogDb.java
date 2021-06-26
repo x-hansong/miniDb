@@ -38,9 +38,9 @@ public class PureLogDb implements MiniDb {
                 return;
             }
             for (File file : files) {
-                String fileName = file.getName();
-                if (file.isFile() && fileName.endsWith(Constants.LOG_FILE_SUFFIX)) {
+                if (isLogFile(file)) {
                     HashIndexTable indexTable = new HashIndexTable(file.getAbsolutePath());
+                    indexTable.compact();
                     indexMap.put(indexTable.getLogName(), indexTable);
                 }
             }
@@ -48,6 +48,11 @@ public class PureLogDb implements MiniDb {
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
+    }
+
+    private boolean isLogFile(File file) {
+        return file.isFile() && (file.getName().endsWith(Constants.LOG_FILE_SUFFIX) ||
+                file.getName().endsWith(Constants.COMPACTED_LOG_SUFFIX));
     }
 
     private String newLogFileName() {
@@ -97,6 +102,7 @@ public class PureLogDb implements MiniDb {
     private void checkIfCreateNewLog() {
         long size = currentTable.logFileLength();
         if (size > logSizeThreshold) {
+            currentTable.compact();
             currentTable = new HashIndexTable(newLogFileName());
             indexMap.put(currentTable.getLogName(), currentTable);
             LoggerUtil.debug(LOGGER, "当前文件长度为：{}, 超过阈值{},触发文件分段，新增日志：{}",

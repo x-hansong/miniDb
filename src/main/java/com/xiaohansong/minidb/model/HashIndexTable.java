@@ -24,17 +24,17 @@ public class HashIndexTable {
     /**
      * 索引
      */
-    private final Map<String, CommandPos> index;
+    private Map<String, CommandPos> index;
 
     /**
      * 文件句柄
      */
-    private final RandomAccessFile tableFile;
+    private RandomAccessFile tableFile;
 
     /**
      * 文件
      */
-    private final File file;
+    private File file;
 
     public HashIndexTable(String filePath) {
         try {
@@ -79,13 +79,7 @@ public class HashIndexTable {
 
     public void writeCommand(Command command) {
         try {
-            tableFile.seek(tableFile.length());
-            byte[] commandBytes = command.toString().getBytes(StandardCharsets.UTF_8);
-            long length = commandBytes.length;
-            tableFile.writeInt((int) length);
-            long offset = tableFile.getFilePointer();
-            tableFile.write(commandBytes);
-            CommandPos commandPos = new CommandPos(offset, length);
+            CommandPos commandPos = writeToFile(tableFile, command);
             index.put(command.getKey(), commandPos);
             LoggerUtil.debug(LOGGER, "写入{}文件，当前内容为:{}", getLogName(), command);
         } catch (Throwable t) {
@@ -93,8 +87,64 @@ public class HashIndexTable {
         }
     }
 
+    public void compact() {
+        try {
+            if (isCompacted()) {
+                return;
+            }
+            Map<String, CommandPos> compactIndex = new HashMap<>();
+            File compactFile = new File(getCompactLogName());
+            RandomAccessFile compactLog = new RandomAccessFile(
+                    compactFile, Constants.RW_MODE);
+            for (String key : index.keySet()) {
+                Command command = queryCommand(key);
+                CommandPos commandPos = writeToFile(compactLog, command);
+                compactIndex.put(command.getKey(), commandPos);
+            }
+            long beforeCompactedSize = tableFile.length();
+            tableFile.close();
+            if (!file.delete()) {
+                throw new RuntimeException("删除文件失败：" + file.getName());
+            }
+            tableFile = compactLog;
+            file = compactFile;
+            index = compactIndex;
+            long afterCompactedSize = tableFile.length();
+            LoggerUtil.debug(LOGGER, "压缩日志文件成功: {}，压缩前大小：{}，压缩后大小：{}",
+                    file.getName(), beforeCompactedSize, afterCompactedSize);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
+    private CommandPos writeToFile(RandomAccessFile wal, Command command) {
+        try {
+            wal.seek(wal.length());
+            byte[] commandBytes = command.toString().getBytes(StandardCharsets.UTF_8);
+            long length = commandBytes.length;
+            wal.writeInt((int) length);
+            long offset = wal.getFilePointer();
+            wal.write(commandBytes);
+            return new CommandPos(offset, length);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
     public String getLogName() {
         return file.getName();
+    }
+
+    public String getCompactLogName() {
+        if (isCompacted()) {
+            return getLogName();
+        } else {
+            return getLogName() + Constants.COMPACTED_LOG_SUFFIX;
+        }
+    }
+
+    public boolean isCompacted() {
+        return getLogName().endsWith(Constants.COMPACTED_LOG_SUFFIX);
     }
 
     public long logFileLength() {
