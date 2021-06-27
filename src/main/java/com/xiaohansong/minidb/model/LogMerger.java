@@ -21,7 +21,7 @@ public class LogMerger extends Thread {
     public LogMerger(PureLogDb pureLogDb) {
         this.pureLogDb = pureLogDb;
         this.setDaemon(true);
-        this.setName("LogCompactor");
+        this.setName("LogMerger");
     }
 
     @Override
