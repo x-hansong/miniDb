@@ -12,13 +12,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class LogCompactor extends Thread {
+public class LogMerger extends Thread {
 
-    private Logger LOGGER = LoggerFactory.getLogger(LogCompactor.class);
+    private Logger LOGGER = LoggerFactory.getLogger(LogMerger.class);
 
     private PureLogDb pureLogDb;
 
-    public LogCompactor(PureLogDb pureLogDb) {
+    public LogMerger(PureLogDb pureLogDb) {
         this.pureLogDb = pureLogDb;
         this.setDaemon(true);
         this.setName("LogCompactor");

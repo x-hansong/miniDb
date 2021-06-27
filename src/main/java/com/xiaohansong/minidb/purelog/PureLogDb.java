@@ -3,7 +3,7 @@ package com.xiaohansong.minidb.purelog;
 import com.xiaohansong.minidb.MiniDb;
 import com.xiaohansong.minidb.model.Constants;
 import com.xiaohansong.minidb.model.HashIndexTable;
-import com.xiaohansong.minidb.model.LogCompactor;
+import com.xiaohansong.minidb.model.LogMerger;
 import com.xiaohansong.minidb.model.command.Command;
 import com.xiaohansong.minidb.model.command.RmCommand;
 import com.xiaohansong.minidb.model.command.SetCommand;
@@ -28,7 +28,7 @@ public class PureLogDb implements MiniDb {
     private HashIndexTable currentTable;
     private final long logSizeThreshold;
 
-    private LogCompactor logCompactor;
+    private LogMerger logMerger;
 
     public PureLogDb(String dataDir, long logSizeThreshold) {
         try {
@@ -38,9 +38,9 @@ public class PureLogDb implements MiniDb {
             currentTable = new HashIndexTable(newLogFileName());
             this.logSizeThreshold = logSizeThreshold;
             indexMap.put(currentTable.getUniqueName(), currentTable);
-            logCompactor = new LogCompactor(this);
+            logMerger = new LogMerger(this);
             if (files == null || files.length == 0) {
-                logCompactor.start();
+                logMerger.start();
                 return;
             }
             for (File file : files) {
@@ -50,7 +50,7 @@ public class PureLogDb implements MiniDb {
                     indexMap.put(indexTable.getUniqueName(), indexTable);
                 }
             }
-            logCompactor.start();
+            logMerger.start();
             LoggerUtil.debug(LOGGER, "加载索引文件：{}", indexMap.keySet());
         } catch (Throwable t) {
             throw new RuntimeException(t);
