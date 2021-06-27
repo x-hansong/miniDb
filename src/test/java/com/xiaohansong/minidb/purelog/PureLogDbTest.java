@@ -8,7 +8,7 @@ import static org.junit.Assert.assertNull;
 public class PureLogDbTest {
 
     @Test
-    public void test() {
+    public void test() throws InterruptedException {
         PureLogDb pureLogDb = new PureLogDb("./", 1024);
         for (int i = 0; i < 10; i++) {
             pureLogDb.put("key" + i, "value" + i);
@@ -28,6 +28,7 @@ public class PureLogDbTest {
         for (int i = 0; i < 10; i++) {
             pureLogDb.remove("key" + i);
         }
+        Thread.sleep(10000);
         for (int i = 0; i < 10; i++) {
             assertNull(pureLogDb.get("key" + i));
         }

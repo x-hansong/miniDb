@@ -7,13 +7,16 @@ import com.xiaohansong.minidb.model.command.CommandTypeEnum;
 import com.xiaohansong.minidb.model.command.RmCommand;
 import com.xiaohansong.minidb.model.command.SetCommand;
 import com.xiaohansong.minidb.utils.LoggerUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class HashIndexTable {
@@ -131,25 +134,53 @@ public class HashIndexTable {
         }
     }
 
+    public String getUniqueName() {
+        return StringUtils.substringBefore(file.getName(), Constants.LOG_FILE_SUFFIX);
+    }
+
     public String getLogName() {
         return file.getName();
     }
 
     public String getCompactLogName() {
-        if (isCompacted()) {
-            return getLogName();
-        } else {
-            return getLogName() + Constants.COMPACTED_LOG_SUFFIX;
-        }
+        return getLogName() + Constants.COMPACTED_LOG_SUFFIX;
+    }
+
+    public String getMergeLogName() {
+        return getLogName() + Constants.MERGE_LOG_SUFFIX;
     }
 
     public boolean isCompacted() {
-        return getLogName().endsWith(Constants.COMPACTED_LOG_SUFFIX);
+        return getLogName().contains(Constants.COMPACTED_LOG_SUFFIX);
+    }
+
+    public boolean isMerged() {
+        return getLogName().contains(Constants.MERGE_LOG_SUFFIX);
     }
 
     public long logFileLength() {
         try {
             return tableFile.length();
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
+    public List<Command> getAllCommand() {
+        List<Command> commands = new ArrayList<>();
+        for (String key : index.keySet()) {
+            Command command = queryCommand(key);
+            commands.add(command);
+        }
+        return commands;
+    }
+
+    public void delete() {
+        try {
+            tableFile.close();
+            if (!file.delete()) {
+                throw new RuntimeException("删除文件失败：" + file.getName());
+            }
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }

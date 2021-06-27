@@ -3,6 +3,7 @@ package com.xiaohansong.minidb.purelog;
 import com.xiaohansong.minidb.MiniDb;
 import com.xiaohansong.minidb.model.Constants;
 import com.xiaohansong.minidb.model.HashIndexTable;
+import com.xiaohansong.minidb.model.LogCompactor;
 import com.xiaohansong.minidb.model.command.Command;
 import com.xiaohansong.minidb.model.command.RmCommand;
 import com.xiaohansong.minidb.model.command.SetCommand;
@@ -11,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.TreeMap;
 
@@ -26,6 +28,8 @@ public class PureLogDb implements MiniDb {
     private HashIndexTable currentTable;
     private final long logSizeThreshold;
 
+    private LogCompactor logCompactor;
+
     public PureLogDb(String dataDir, long logSizeThreshold) {
         try {
             File dir = new File(dataDir);
@@ -33,17 +37,20 @@ public class PureLogDb implements MiniDb {
             indexMap = new TreeMap<>(Comparator.reverseOrder());
             currentTable = new HashIndexTable(newLogFileName());
             this.logSizeThreshold = logSizeThreshold;
-            indexMap.put(currentTable.getLogName(), currentTable);
+            indexMap.put(currentTable.getUniqueName(), currentTable);
+            logCompactor = new LogCompactor(this);
             if (files == null || files.length == 0) {
+                logCompactor.start();
                 return;
             }
             for (File file : files) {
                 if (isLogFile(file)) {
                     HashIndexTable indexTable = new HashIndexTable(file.getAbsolutePath());
                     indexTable.compact();
-                    indexMap.put(indexTable.getLogName(), indexTable);
+                    indexMap.put(indexTable.getUniqueName(), indexTable);
                 }
             }
+            logCompactor.start();
             LoggerUtil.debug(LOGGER, "加载索引文件：{}", indexMap.keySet());
         } catch (Throwable t) {
             throw new RuntimeException(t);
@@ -52,7 +59,8 @@ public class PureLogDb implements MiniDb {
 
     private boolean isLogFile(File file) {
         return file.isFile() && (file.getName().endsWith(Constants.LOG_FILE_SUFFIX) ||
-                file.getName().endsWith(Constants.COMPACTED_LOG_SUFFIX));
+                file.getName().endsWith(Constants.COMPACTED_LOG_SUFFIX) ||
+                file.getName().endsWith(Constants.MERGE_LOG_SUFFIX));
     }
 
     private String newLogFileName() {
@@ -104,10 +112,23 @@ public class PureLogDb implements MiniDb {
         if (size > logSizeThreshold) {
             currentTable.compact();
             currentTable = new HashIndexTable(newLogFileName());
-            indexMap.put(currentTable.getLogName(), currentTable);
+            indexMap.put(currentTable.getUniqueName(), currentTable);
             LoggerUtil.debug(LOGGER, "当前文件长度为：{}, 超过阈值{},触发文件分段，新增日志：{}",
                     size, logSizeThreshold, currentTable.getLogName());
         }
+    }
+
+    public Collection<HashIndexTable> getTables() {
+        return indexMap.values();
+    }
+
+    public void removeTable(String uniqueName) {
+        indexMap.remove(uniqueName);
+        LoggerUtil.debug(LOGGER, "删除log：{}，当前剩余log：{}", uniqueName, indexMap.keySet());
+    }
+
+    public void putTable(HashIndexTable table) {
+        indexMap.put(table.getUniqueName(), table);
     }
 
 }
