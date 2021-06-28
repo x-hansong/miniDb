@@ -52,6 +52,8 @@ public class LogMerger extends Thread {
                     mergeTable.writeCommand(command);
                 }
                 pureLogDb.putTable(mergeTable);
+                firstTable.delete();
+                tables.removeFirst();
                 for (HashIndexTable table : tables) {
                     pureLogDb.removeTable(table.getUniqueName());
                     table.delete();
