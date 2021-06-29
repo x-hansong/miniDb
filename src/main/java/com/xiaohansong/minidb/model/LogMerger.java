@@ -1,6 +1,7 @@
 package com.xiaohansong.minidb.model;
 
 import com.xiaohansong.minidb.model.command.Command;
+import com.xiaohansong.minidb.model.command.SetCommand;
 import com.xiaohansong.minidb.purelog.PureLogDb;
 import com.xiaohansong.minidb.utils.LoggerUtil;
 import org.slf4j.Logger;
@@ -48,7 +49,9 @@ public class LogMerger extends Thread {
                         mergeIndex.putIfAbsent(command.getKey(), command);
                     }
                 }
-                for (Command command : mergeIndex.values()) {
+                List<Command> remainCommandList = mergeIndex.values().stream().
+                        filter(command -> command instanceof SetCommand).collect(Collectors.toList());
+                for (Command command : remainCommandList) {
                     mergeTable.writeCommand(command);
                 }
                 pureLogDb.putTable(mergeTable);
