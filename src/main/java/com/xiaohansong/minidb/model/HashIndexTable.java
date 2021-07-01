@@ -185,4 +185,16 @@ public class HashIndexTable {
             throw new RuntimeException(t);
         }
     }
+
+    public void buildHashIndexFile() {
+        try {
+            RandomAccessFile indexFile = new RandomAccessFile(getUniqueName() + Constants.INDEX_SUFFIX,
+                    Constants.RW_MODE);
+            byte[] indexBytes = JSONObject.toJSONString(index).getBytes(StandardCharsets.UTF_8);
+            indexFile.write(indexBytes);
+            indexFile.close();
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
 }

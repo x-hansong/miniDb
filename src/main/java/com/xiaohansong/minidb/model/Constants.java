@@ -10,4 +10,5 @@ public class Constants {
     public static final String KEY = "key";
     public static final String COMPACTED_LOG_SUFFIX = ".compacted";
     public static final String MERGE_LOG_SUFFIX = ".merge";
+    public static final String INDEX_SUFFIX = ".index";
 }

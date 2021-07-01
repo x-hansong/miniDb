@@ -9,7 +9,7 @@ public class PureLogDbTest {
 
     @Test
     public void test() throws InterruptedException {
-        PureLogDb pureLogDb = new PureLogDb("./", 1024);
+        PureLogDb pureLogDb = new PureLogDb(System.getProperty("user.dir") + "/", 1024);
         for (int i = 0; i < 10; i++) {
             pureLogDb.put("key" + i, "value" + i);
         }

@@ -30,8 +30,11 @@ public class PureLogDb implements MiniDb {
 
     private LogMerger logMerger;
 
+    private String dataDir;
+
     public PureLogDb(String dataDir, long logSizeThreshold) {
         try {
+            this.dataDir = dataDir;
             File dir = new File(dataDir);
             File[] files = dir.listFiles();
             indexMap = new TreeMap<>(Comparator.reverseOrder());
@@ -64,7 +67,7 @@ public class PureLogDb implements MiniDb {
     }
 
     private String newLogFileName() {
-        return System.currentTimeMillis() + ".log";
+        return dataDir + System.currentTimeMillis() + ".log";
     }
 
     @Override
