@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 
 public class LogMerger extends Thread {
 
+    public static final int SLEEP_MILLS = 3000;
     private Logger LOGGER = LoggerFactory.getLogger(LogMerger.class);
 
     private PureLogDb pureLogDb;
@@ -36,12 +37,12 @@ public class LogMerger extends Thread {
                         .collect(Collectors.toList());
                 LoggerUtil.debug(LOGGER, "待合并日志：{}", mergeLogNames);
                 if (tables.size() <= 1) {
-                    Thread.sleep(3000);
+                    Thread.sleep(SLEEP_MILLS);
                     LoggerUtil.debug(LOGGER, "待合并日志少于两个，无需合并：{}", mergeLogNames);
                     continue;
                 }
                 HashIndexTable firstTable = tables.getFirst();
-                HashIndexTable mergeTable = new HashIndexTable(firstTable.getMergeLogName());
+                HashIndexTable mergeTable = new HashIndexTable(firstTable.getMergeLogPath());
                 Map<String, Command> mergeIndex = new HashMap<>();
                 for (HashIndexTable table : tables) {
                     List<Command> commandList = table.getAllCommand();
@@ -61,8 +62,9 @@ public class LogMerger extends Thread {
                     pureLogDb.removeTable(table.getUniqueName());
                     table.delete();
                 }
+                mergeTable.buildHashIndexFile();
                 LoggerUtil.debug(LOGGER, "日志合并完成: {}", mergeTable.getLogName());
-                Thread.sleep(3000);
+                Thread.sleep(SLEEP_MILLS);
             }
         } catch (Throwable t) {
             throw new RuntimeException(t);

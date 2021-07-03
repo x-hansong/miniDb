@@ -54,7 +54,7 @@ public class PureLogDb implements MiniDb {
                 }
             }
             logMerger.start();
-            LoggerUtil.debug(LOGGER, "加载索引文件：{}", indexMap.keySet());
+            LoggerUtil.debug(LOGGER, "已加载日志：{}", indexMap.keySet());
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
