@@ -42,7 +42,7 @@ public class LogMerger extends Thread {
                     continue;
                 }
                 HashIndexTable firstTable = tables.getFirst();
-                HashIndexTable mergeTable = new HashIndexTable(firstTable.getMergeLogPath());
+                HashIndexTable mergeTable = new HashIndexTable(firstTable.getMergeLogPath(), false);
                 Map<String, Command> mergeIndex = new HashMap<>();
                 for (HashIndexTable table : tables) {
                     List<Command> commandList = table.getAllCommand();

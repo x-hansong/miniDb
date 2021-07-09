@@ -48,12 +48,16 @@ public class HashIndexTable {
     private File indexFile;
 
     public HashIndexTable(String filePath) {
+        this(filePath, true);
+    }
+
+    public HashIndexTable(String filePath, boolean loadFromIndex) {
         try {
             this.file = new File(filePath);
             this.tableFile = new RandomAccessFile(file, Constants.RW_MODE);
             this.index = new HashMap<>();
             this.indexFile = new File(getIndexFilePath());
-            if (indexFile.exists() && !isMerged()) {
+            if (indexFile.exists() && loadFromIndex) {
                 JSONObject indexJson = JSONObject.parseObject(new FileInputStream(indexFile), JSONObject.class);
                 index = indexJson.toJavaObject(new TypeReference<Map<String, CommandPos>>() {});
                 LoggerUtil.debug(LOGGER, "加载索引文件：{}", indexFile.getAbsolutePath());
