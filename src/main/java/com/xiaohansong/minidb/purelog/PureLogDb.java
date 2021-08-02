@@ -32,6 +32,8 @@ public class PureLogDb implements MiniDb {
 
     private String dataDir;
 
+    private final Object fileLock;
+
     public PureLogDb(String dataDir, long logSizeThreshold) {
         try {
             this.dataDir = dataDir;
@@ -42,6 +44,7 @@ public class PureLogDb implements MiniDb {
             this.logSizeThreshold = logSizeThreshold;
             indexMap.put(currentTable.getUniqueName(), currentTable);
             logMerger = new LogMerger(this);
+            fileLock = new Object();
             if (files == null || files.length == 0) {
                 logMerger.start();
                 return;
@@ -73,9 +76,11 @@ public class PureLogDb implements MiniDb {
     @Override
     public void put(String key, String value) {
         try {
-            SetCommand setCommand = new SetCommand(key, value);
-            currentTable.writeCommand(setCommand);
-            checkIfCreateNewLog();
+            synchronized (this.fileLock) {
+                SetCommand setCommand = new SetCommand(key, value);
+                currentTable.writeCommand(setCommand);
+                checkIfCreateNewLog();
+            }
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -84,27 +89,31 @@ public class PureLogDb implements MiniDb {
     @Override
     public String get(String key) {
         try {
-            for (HashIndexTable table : indexMap.values()) {
-                Command command = table.queryCommand(key);
-                LoggerUtil.debug(LOGGER, "查询key={}, 当前日志：{}, 结果：{}", key, table.getLogName(), command);
-                if (command instanceof SetCommand) {
-                    return ((SetCommand) command).getValue();
-                } else if (command instanceof RmCommand) {
-                    return null;
+            synchronized (this.fileLock) {
+                for (HashIndexTable table : indexMap.values()) {
+                    Command command = table.queryCommand(key);
+                    LoggerUtil.debug(LOGGER, "查询key={}, 当前日志：{}, 结果：{}", key, table.getLogName(), command);
+                    if (command instanceof SetCommand) {
+                        return ((SetCommand) command).getValue();
+                    } else if (command instanceof RmCommand) {
+                        return null;
+                    }
                 }
+                return null;
             }
-            return null;
         } catch (Throwable t) {
-            throw new RuntimeException(t);
+            throw new RuntimeException("key=" + key, t);
         }
     }
 
     @Override
     public void remove(String key) {
         try {
-            RmCommand rmCommand = new RmCommand(key);
-            currentTable.writeCommand(rmCommand);
-            checkIfCreateNewLog();
+            synchronized (this.fileLock) {
+                RmCommand rmCommand = new RmCommand(key);
+                currentTable.writeCommand(rmCommand);
+                checkIfCreateNewLog();
+            }
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
