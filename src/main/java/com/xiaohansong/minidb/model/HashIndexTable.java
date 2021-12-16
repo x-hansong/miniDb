@@ -47,6 +47,11 @@ public class HashIndexTable {
      */
     private File indexFile;
 
+    /**
+     * 文件锁
+     */
+    private final Object fileLock;
+
     public HashIndexTable(String filePath) {
         this(filePath, true);
     }
@@ -57,6 +62,7 @@ public class HashIndexTable {
             this.tableFile = new RandomAccessFile(file, Constants.RW_MODE);
             this.index = new HashMap<>();
             this.indexFile = new File(getIndexFilePath());
+            this.fileLock = new Object();
             if (indexFile.exists() && loadFromIndex) {
                 JSONObject indexJson = JSONObject.parseObject(new FileInputStream(indexFile), JSONObject.class);
                 index = indexJson.toJavaObject(new TypeReference<Map<String, CommandPos>>() {});
@@ -88,20 +94,28 @@ public class HashIndexTable {
 
     public Command queryCommand(String key) {
         try {
-            CommandPos commandPos = index.get(key);
-            if (commandPos == null) {
+            synchronized (fileLock) {
+                CommandPos commandPos = index.get(key);
+                if (commandPos == null) {
+                    return null;
+                }
+                tableFile.seek(commandPos.getOffset());
+                byte[] commandBytes = new byte[(int) commandPos.getLength()];
+                tableFile.read(commandBytes);
+                String commandStr = new String(commandBytes, StandardCharsets.UTF_8);
+                JSONObject commandJson;
+                try {
+                    commandJson = JSON.parseObject(commandStr);
+                } catch (Throwable t) {
+                    throw new RuntimeException(commandPos + " " + commandStr, t);
+                }
+                if (CommandTypeEnum.SET.name().equals(commandJson.getString(Constants.TYPE))) {
+                    return commandJson.toJavaObject(SetCommand.class);
+                } else if (CommandTypeEnum.RM.name().equals(commandJson.getString(Constants.TYPE))) {
+                    return commandJson.toJavaObject(RmCommand.class);
+                }
                 return null;
             }
-            tableFile.seek(commandPos.getOffset());
-            byte[] commandBytes = new byte[(int) commandPos.getLength()];
-            tableFile.read(commandBytes);
-            JSONObject commandJson = JSON.parseObject(new String(commandBytes, StandardCharsets.UTF_8));
-            if (CommandTypeEnum.SET.name().equals(commandJson.getString(Constants.TYPE))) {
-                return commandJson.toJavaObject(SetCommand.class);
-            } else if (CommandTypeEnum.RM.name().equals(commandJson.getString(Constants.TYPE))) {
-                return commandJson.toJavaObject(RmCommand.class);
-            }
-            return null;
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -109,9 +123,11 @@ public class HashIndexTable {
 
     public void writeCommand(Command command) {
         try {
-            CommandPos commandPos = writeToFile(tableFile, command);
-            index.put(command.getKey(), commandPos);
-            LoggerUtil.debug(LOGGER, "写入{}文件，当前内容为:{}", getLogName(), command);
+            synchronized (fileLock) {
+                CommandPos commandPos = writeToFile(tableFile, command);
+                index.put(command.getKey(), commandPos);
+                LoggerUtil.debug(LOGGER, "写入{}文件，当前内容为:{}", getLogName(), command);
+            }
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -119,30 +135,32 @@ public class HashIndexTable {
 
     public void compact() {
         try {
-            if (isCompacted()) {
-                return;
+            synchronized (fileLock) {
+                if (isCompacted()) {
+                    return;
+                }
+                Map<String, CommandPos> compactIndex = new HashMap<>();
+                File compactFile = new File(getCompactLogPath());
+                RandomAccessFile compactLog = new RandomAccessFile(
+                        compactFile, Constants.RW_MODE);
+                for (String key : index.keySet()) {
+                    Command command = queryCommand(key);
+                    CommandPos commandPos = writeToFile(compactLog, command);
+                    compactIndex.put(command.getKey(), commandPos);
+                }
+                long beforeCompactedSize = tableFile.length();
+                tableFile.close();
+                if (!file.delete()) {
+                    throw new RuntimeException("删除文件失败：" + file.getName());
+                }
+                tableFile = compactLog;
+                file = compactFile;
+                index = compactIndex;
+                long afterCompactedSize = tableFile.length();
+                LoggerUtil.debug(LOGGER, "压缩日志文件成功: {}，压缩前大小：{}，压缩后大小：{}",
+                        file.getName(), beforeCompactedSize, afterCompactedSize);
+                buildHashIndexFile();
             }
-            Map<String, CommandPos> compactIndex = new HashMap<>();
-            File compactFile = new File(getCompactLogPath());
-            RandomAccessFile compactLog = new RandomAccessFile(
-                    compactFile, Constants.RW_MODE);
-            for (String key : index.keySet()) {
-                Command command = queryCommand(key);
-                CommandPos commandPos = writeToFile(compactLog, command);
-                compactIndex.put(command.getKey(), commandPos);
-            }
-            long beforeCompactedSize = tableFile.length();
-            tableFile.close();
-            if (!file.delete()) {
-                throw new RuntimeException("删除文件失败：" + file.getName());
-            }
-            tableFile = compactLog;
-            file = compactFile;
-            index = compactIndex;
-            long afterCompactedSize = tableFile.length();
-            LoggerUtil.debug(LOGGER, "压缩日志文件成功: {}，压缩前大小：{}，压缩后大小：{}",
-                    file.getName(), beforeCompactedSize, afterCompactedSize);
-            buildHashIndexFile();
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -158,7 +176,7 @@ public class HashIndexTable {
             wal.write(commandBytes);
             return new CommandPos(offset, length);
         } catch (Throwable t) {
-            throw new RuntimeException(t);
+            throw new RuntimeException(command.toString(), t);
         }
     }
 
@@ -205,14 +223,15 @@ public class HashIndexTable {
 
     public void delete() {
         try {
-            tableFile.close();
-            if (!file.delete()) {
-                throw new RuntimeException("删除文件失败：" + file.getName());
+            synchronized (fileLock) {
+                tableFile.close();
+                if (!file.delete()) {
+                    throw new RuntimeException("删除文件失败：" + file.getName());
+                }
+                if (indexFile != null && indexFile.exists() && !indexFile.delete()) {
+                    throw new RuntimeException("删除文件失败：" + file.getName());
+                }
             }
-            if (indexFile != null && indexFile.exists() && !indexFile.delete()) {
-                throw new RuntimeException("删除文件失败：" + file.getName());
-            }
-
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -232,16 +251,18 @@ public class HashIndexTable {
 
     public void buildHashIndexFile() {
         try {
-            indexFile = new File(getIndexFilePath());
-            if (indexFile.exists()) {
-                indexFile.delete();
+            synchronized (fileLock) {
+                indexFile = new File(getIndexFilePath());
+                if (indexFile.exists()) {
+                    indexFile.delete();
+                }
+                RandomAccessFile indexWriter = new RandomAccessFile(indexFile,
+                        Constants.RW_MODE);
+                byte[] indexBytes = JSONObject.toJSONString(index).getBytes(StandardCharsets.UTF_8);
+                indexWriter.write(indexBytes);
+                indexWriter.close();
+                LoggerUtil.debug(LOGGER, "构建索引文件：{}", indexFile.getAbsolutePath());
             }
-            RandomAccessFile indexWriter = new RandomAccessFile(indexFile,
-                    Constants.RW_MODE);
-            byte[] indexBytes = JSONObject.toJSONString(index).getBytes(StandardCharsets.UTF_8);
-            indexWriter.write(indexBytes);
-            indexWriter.close();
-            LoggerUtil.debug(LOGGER, "构建索引文件：{}", indexFile.getAbsolutePath());
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }

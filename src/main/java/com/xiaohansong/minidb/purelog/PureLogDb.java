@@ -15,6 +15,8 @@ import java.io.File;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 简单的基于日志的数据库
@@ -32,7 +34,9 @@ public class PureLogDb implements MiniDb {
 
     private String dataDir;
 
-    private final Object fileLock;
+    public final Object dbLock;
+
+    private ExecutorService compactThreadPool;
 
     public PureLogDb(String dataDir, long logSizeThreshold) {
         try {
@@ -44,7 +48,8 @@ public class PureLogDb implements MiniDb {
             this.logSizeThreshold = logSizeThreshold;
             indexMap.put(currentTable.getUniqueName(), currentTable);
             logMerger = new LogMerger(this);
-            fileLock = new Object();
+            dbLock = new Object();
+            compactThreadPool = Executors.newFixedThreadPool(1);
             if (files == null || files.length == 0) {
                 logMerger.start();
                 return;
@@ -76,11 +81,9 @@ public class PureLogDb implements MiniDb {
     @Override
     public void put(String key, String value) {
         try {
-            synchronized (this.fileLock) {
-                SetCommand setCommand = new SetCommand(key, value);
-                currentTable.writeCommand(setCommand);
-                checkIfCreateNewLog();
-            }
+//            checkIfCreateNewLog();
+            SetCommand setCommand = new SetCommand(key, value);
+            currentTable.writeCommand(setCommand);
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -89,7 +92,7 @@ public class PureLogDb implements MiniDb {
     @Override
     public String get(String key) {
         try {
-            synchronized (this.fileLock) {
+            synchronized (this.dbLock) {
                 for (HashIndexTable table : indexMap.values()) {
                     Command command = table.queryCommand(key);
                     LoggerUtil.debug(LOGGER, "查询key={}, 当前日志：{}, 结果：{}", key, table.getLogName(), command);
@@ -109,11 +112,9 @@ public class PureLogDb implements MiniDb {
     @Override
     public void remove(String key) {
         try {
-            synchronized (this.fileLock) {
-                RmCommand rmCommand = new RmCommand(key);
-                currentTable.writeCommand(rmCommand);
-                checkIfCreateNewLog();
-            }
+//            checkIfCreateNewLog();
+            RmCommand rmCommand = new RmCommand(key);
+            currentTable.writeCommand(rmCommand);
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -122,11 +123,15 @@ public class PureLogDb implements MiniDb {
     private void checkIfCreateNewLog() {
         long size = currentTable.logFileLength();
         if (size > logSizeThreshold) {
-            currentTable.compact();
-            currentTable = new HashIndexTable(newLogFileName());
-            indexMap.put(currentTable.getUniqueName(), currentTable);
-            LoggerUtil.debug(LOGGER, "当前文件长度为：{}, 超过阈值{},触发文件分段，新增日志：{}",
-                    size, logSizeThreshold, currentTable.getLogName());
+//            compactThreadPool.execute(() -> {
+//                currentTable.compact();
+//            });
+            synchronized (dbLock) {
+                currentTable = new HashIndexTable(newLogFileName());
+                indexMap.put(currentTable.getUniqueName(), currentTable);
+                LoggerUtil.debug(LOGGER, "当前文件长度为：{}, 超过阈值{},触发文件分段，新增日志：{}",
+                        size, logSizeThreshold, currentTable.getLogName());
+            }
         }
     }
 
@@ -135,12 +140,16 @@ public class PureLogDb implements MiniDb {
     }
 
     public void removeTable(String uniqueName) {
-        indexMap.remove(uniqueName);
-        LoggerUtil.debug(LOGGER, "删除log：{}，当前剩余log：{}", uniqueName, indexMap.keySet());
+        synchronized (dbLock) {
+            indexMap.remove(uniqueName);
+            LoggerUtil.debug(LOGGER, "删除log：{}，当前剩余log：{}", uniqueName, indexMap.keySet());
+        }
     }
 
     public void putTable(HashIndexTable table) {
-        indexMap.put(table.getUniqueName(), table);
+        synchronized (dbLock) {
+            indexMap.put(table.getUniqueName(), table);
+        }
     }
 
 }
