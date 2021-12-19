@@ -31,7 +31,7 @@ public class LogMerger extends Thread {
         try {
             while (true) {
                 Thread.sleep(SLEEP_MILLS);
-                synchronized (pureLogDb.fileLock) {/
+                synchronized (pureLogDb.fileLock) {
                     LinkedList<HashIndexTable> tables = pureLogDb.getTables()
                             .stream().filter(table -> table.isCompacted() || table.isMerged())
                             .collect(Collectors.toCollection(LinkedList::new));
