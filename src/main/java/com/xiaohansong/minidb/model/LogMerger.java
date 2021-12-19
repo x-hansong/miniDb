@@ -30,8 +30,8 @@ public class LogMerger extends Thread {
     public void run() {
         try {
             while (true) {
-                Thread.sleep(SLEEP_MILLS);//新增 1
-                synchronized (pureLogDb.fileLock) {//新增 2
+                Thread.sleep(SLEEP_MILLS);
+                synchronized (pureLogDb.fileLock) {/
                     LinkedList<HashIndexTable> tables = pureLogDb.getTables()
                             .stream().filter(table -> table.isCompacted() || table.isMerged())
                             .collect(Collectors.toCollection(LinkedList::new));
@@ -39,7 +39,6 @@ public class LogMerger extends Thread {
                             .collect(Collectors.toList());
                     LoggerUtil.debug(LOGGER, "待合并日志：{}", mergeLogNames);
                     if (tables.size() <= 1) {
-                        //Thread.sleep(SLEEP_MILLS);//删除 3
                         LoggerUtil.debug(LOGGER, "待合并日志少于两个，无需合并：{}", mergeLogNames);
                         continue;
                     }
@@ -66,7 +65,6 @@ public class LogMerger extends Thread {
                     }
                     mergeTable.buildHashIndexFile();
                     LoggerUtil.debug(LOGGER, "日志合并完成: {}", mergeTable.getLogName());
-                    //Thread.sleep(SLEEP_MILLS);//删除 4
                 }
             }
         } catch (
