@@ -81,9 +81,9 @@ public class PureLogDb implements MiniDb {
     @Override
     public void put(String key, String value) {
         try {
-//            checkIfCreateNewLog();
             SetCommand setCommand = new SetCommand(key, value);
             currentTable.writeCommand(setCommand);
+            checkIfCreateNewLog();
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -95,7 +95,7 @@ public class PureLogDb implements MiniDb {
             synchronized (this.dbLock) {
                 for (HashIndexTable table : indexMap.values()) {
                     Command command = table.queryCommand(key);
-                    LoggerUtil.debug(LOGGER, "查询key={}, 当前日志：{}, 结果：{}", key, table.getLogName(), command);
+                    LoggerUtil.debug(LOGGER, "查询key={}, 当前日志: {}, 结果: {}", key, table.getLogName(), command);
                     if (command instanceof SetCommand) {
                         return ((SetCommand) command).getValue();
                     } else if (command instanceof RmCommand) {
@@ -112,9 +112,9 @@ public class PureLogDb implements MiniDb {
     @Override
     public void remove(String key) {
         try {
-//            checkIfCreateNewLog();
             RmCommand rmCommand = new RmCommand(key);
             currentTable.writeCommand(rmCommand);
+            checkIfCreateNewLog();
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
@@ -123,14 +123,16 @@ public class PureLogDb implements MiniDb {
     private void checkIfCreateNewLog() {
         long size = currentTable.logFileLength();
         if (size > logSizeThreshold) {
-//            compactThreadPool.execute(() -> {
-//                currentTable.compact();
-//            });
+            currentTable.compact();
             synchronized (dbLock) {
-                currentTable = new HashIndexTable(newLogFileName());
-                indexMap.put(currentTable.getUniqueName(), currentTable);
-                LoggerUtil.debug(LOGGER, "当前文件长度为：{}, 超过阈值{},触发文件分段，新增日志：{}",
-                        size, logSizeThreshold, currentTable.getLogName());
+                //重新检查条件，防止多个线程重复执行
+                size = currentTable.logFileLength();
+                if (size > logSizeThreshold) {
+                    currentTable = new HashIndexTable(newLogFileName());
+                    indexMap.put(currentTable.getUniqueName(), currentTable);
+                    LoggerUtil.debug(LOGGER, "当前文件长度为：{}, 超过阈值{},触发文件分段，新增日志：{}",
+                            size, logSizeThreshold, currentTable.getLogName());
+                }
             }
         }
     }
