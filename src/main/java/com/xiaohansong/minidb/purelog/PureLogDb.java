@@ -32,7 +32,7 @@ public class PureLogDb implements MiniDb {
 
     private String dataDir;
 
-    private final Object fileLock;
+    public final Object fileLock;
 
     public PureLogDb(String dataDir, long logSizeThreshold) {
         try {

@@ -30,43 +30,47 @@ public class LogMerger extends Thread {
     public void run() {
         try {
             while (true) {
-                LinkedList<HashIndexTable> tables = pureLogDb.getTables()
-                        .stream().filter(table -> table.isCompacted() || table.isMerged())
-                        .collect(Collectors.toCollection(LinkedList::new));
-                List<String> mergeLogNames = tables.stream().map(HashIndexTable::getLogName)
-                        .collect(Collectors.toList());
-                LoggerUtil.debug(LOGGER, "待合并日志：{}", mergeLogNames);
-                if (tables.size() <= 1) {
-                    Thread.sleep(SLEEP_MILLS);
-                    LoggerUtil.debug(LOGGER, "待合并日志少于两个，无需合并：{}", mergeLogNames);
-                    continue;
-                }
-                HashIndexTable firstTable = tables.getFirst();
-                HashIndexTable mergeTable = new HashIndexTable(firstTable.getMergeLogPath(), false);
-                Map<String, Command> mergeIndex = new HashMap<>();
-                for (HashIndexTable table : tables) {
-                    List<Command> commandList = table.getAllCommand();
-                    for (Command command : commandList) {
-                        mergeIndex.putIfAbsent(command.getKey(), command);
+                Thread.sleep(SLEEP_MILLS);//新增 1
+                synchronized (pureLogDb.fileLock) {//新增 2
+                    LinkedList<HashIndexTable> tables = pureLogDb.getTables()
+                            .stream().filter(table -> table.isCompacted() || table.isMerged())
+                            .collect(Collectors.toCollection(LinkedList::new));
+                    List<String> mergeLogNames = tables.stream().map(HashIndexTable::getLogName)
+                            .collect(Collectors.toList());
+                    LoggerUtil.debug(LOGGER, "待合并日志：{}", mergeLogNames);
+                    if (tables.size() <= 1) {
+                        //Thread.sleep(SLEEP_MILLS);//删除 3
+                        LoggerUtil.debug(LOGGER, "待合并日志少于两个，无需合并：{}", mergeLogNames);
+                        continue;
                     }
+                    HashIndexTable firstTable = tables.getFirst();
+                    HashIndexTable mergeTable = new HashIndexTable(firstTable.getMergeLogPath(), false);
+                    Map<String, Command> mergeIndex = new HashMap<>();
+                    for (HashIndexTable table : tables) {
+                        List<Command> commandList = table.getAllCommand();
+                        for (Command command : commandList) {
+                            mergeIndex.putIfAbsent(command.getKey(), command);
+                        }
+                    }
+                    List<Command> remainCommandList = mergeIndex.values().stream().
+                            filter(command -> command instanceof SetCommand).collect(Collectors.toList());
+                    for (Command command : remainCommandList) {
+                        mergeTable.writeCommand(command);
+                    }
+                    pureLogDb.putTable(mergeTable);
+                    firstTable.delete();
+                    tables.removeFirst();
+                    for (HashIndexTable table : tables) {
+                        pureLogDb.removeTable(table.getUniqueName());
+                        table.delete();
+                    }
+                    mergeTable.buildHashIndexFile();
+                    LoggerUtil.debug(LOGGER, "日志合并完成: {}", mergeTable.getLogName());
+                    //Thread.sleep(SLEEP_MILLS);//删除 4
                 }
-                List<Command> remainCommandList = mergeIndex.values().stream().
-                        filter(command -> command instanceof SetCommand).collect(Collectors.toList());
-                for (Command command : remainCommandList) {
-                    mergeTable.writeCommand(command);
-                }
-                pureLogDb.putTable(mergeTable);
-                firstTable.delete();
-                tables.removeFirst();
-                for (HashIndexTable table : tables) {
-                    pureLogDb.removeTable(table.getUniqueName());
-                    table.delete();
-                }
-                mergeTable.buildHashIndexFile();
-                LoggerUtil.debug(LOGGER, "日志合并完成: {}", mergeTable.getLogName());
-                Thread.sleep(SLEEP_MILLS);
             }
-        } catch (Throwable t) {
+        } catch (
+                Throwable t) {
             throw new RuntimeException(t);
         }
     }
